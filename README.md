@@ -6,6 +6,8 @@ Video: https://youtu.be/-_QCDYcExfw
 
 Hello World example program: https://github.com/leonardo-ono/JavaGBAsm/blob/master/example/hello.asm
 
+Usage: java -jar jgbasm.jar hello.asm hello.gb
+
 Some details about this assembler:
  - can generate only 32Kb 'ROM ONLY' (00h) Cartridge Type 
  - can't evaluate expressions
@@ -16,6 +18,6 @@ Some details about this assembler:
  - hex literal numbers: $ab, 0abh
  - binary literal numbers: %10010001, 10010001b
  
- Requires java 8+
+ Requires java 8+.
  
- Usage: java -jar jgbasm.jar in.asm out.gb
+ 
