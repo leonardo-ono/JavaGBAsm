@@ -9,6 +9,12 @@ entry_point:
 		org $150
 		
 start:
+		; according to http://bgb.bircd.org/pandocs.htm#videodisplay:
+		; "CAUTION: Stopping LCD operation (Bit 7 from 1 to 0) may be 
+		; performed during V-Blank ONLY, disabeling the display 
+		; outside of the V-Blank period may damage the hardware."
+		call wait_for_vblank
+		
 		; disable display
 		ld a, 0
 		ldh ($40), a
@@ -33,6 +39,12 @@ start:
 		nop
 		jp .end
 		
+wait_for_vblank:
+		ldh a, ($44) ; LY
+		cp 144
+		jr nz, wait_for_vblank
+		ret
+	
 memcpy:
 	.next_byte:
 		ld a, (hl+)
