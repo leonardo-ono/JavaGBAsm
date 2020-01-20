@@ -1,11 +1,14 @@
 		VRAM equ $8000
-
+		
+		IO_LCDC equ $40
+		IO_RY equ $44
+		
 		org $100
 		
 entry_point:
 		nop
 		jp start
-		
+
 		org $150
 		
 start:
@@ -17,7 +20,7 @@ start:
 		
 		; disable display
 		ld a, 0
-		ldh ($40), a
+		ldh (IO_LCDC), a
 		
 		; load "HELLO WORLD!!!" characters
 		ld hl, chars_data ; src
@@ -33,14 +36,14 @@ start:
 		
 		; enable display
 		ld a, %10010001
-		ldh ($40), a
+		ldh (IO_LCDC), a
 		
 	.end:
 		nop
 		jp .end
 		
 wait_for_vblank:
-		ldh a, ($44) ; LY
+		ldh a, (IO_RY) ; LY
 		cp 144
 		jr nz, wait_for_vblank
 		ret
@@ -89,22 +92,3 @@ chars_data: ; 15 * 16 = 240 bytes
 screen_data:
 	db $00,$01,$02,$03,$04,$05,$06,$07
 	db $08,$09,$0A,$0B,$0C,$0D,$0E,$00
-	
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-	
-		
-		
-		
-		
-		
-		

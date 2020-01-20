@@ -94,7 +94,7 @@ public class GBAsm {
             if (!currentLine.isEmpty()) {
                 debug(lineNumber + ": " + currentLine);
                 setTokens(currentLine.split(
-                    "\\s+|(?<=[,\\(\\):])|(?=[,\\(\\):])"));
+                    "\\s+|(?<=[,\\(\\):+-])|(?=[,\\(\\):+-])"));
                 
                 if (handleLabel()) {
                     String instr = handleInstr();
@@ -123,8 +123,12 @@ public class GBAsm {
         });    
     }
     
+    private static void warning(int lineNumber, String line, String message) {
+        System.err.println("\nLine " + lineNumber + ": " + line + "\n warning: " + message);
+    }
+
     private static void error(int lineNumber, String line, String message) {
-        System.err.println("\nLine " + lineNumber + ": " + line + "\n" + message);
+        System.err.println("\nLine " + lineNumber + ": " + line + "\n error: " + message);
         System.exit(-1);
     }
     
@@ -250,6 +254,7 @@ public class GBAsm {
         for (int type = 0; type < 6; type++) {
             int opSize = 0;
             String originalToken = "";
+            String replacedToken = "";
             boolean replaced = false;
             String arg = "";
             while (hasNextToken()) {
@@ -257,7 +262,7 @@ public class GBAsm {
                     argTokenStartIndex = tokenIndex;
                 }
                 nextToken();
-                String replacedToken = replaceArgument(type, getToken());
+                replacedToken = replaceArgument(type, getToken());
                 arg += replacedToken;
                 if (!replaced && !getToken().equals(replacedToken)) {
                     originalToken = getToken();
@@ -271,7 +276,7 @@ public class GBAsm {
                 writeMachineCodeHex(conversionTable.get(conversionKey));
                 if (replaced) {
                     if (isLabel(originalToken)) {
-                        saveFixableAddress(originalToken, opSize == 1);
+                        saveFixableAddress(originalToken, opSize, replacedToken.equals("R8"));
                     }
                     else {
                         writeMachineCodeInt(originalToken, opSize);
@@ -317,8 +322,8 @@ public class GBAsm {
         
         switch (type) {
             case 1:
-                if (c >= 0 && c < 256) {
-                    token = "D8";
+                if (isLabel || (c >= 0 && c <= 65535)) {
+                    token = "A16";
                 }
                 break;
             case 2:
@@ -327,13 +332,13 @@ public class GBAsm {
                 }
                 break;
             case 3:
-                if (c >= 0 && c <= 255) {
+                if (isLabel || (c >= 0 && c <= 255)) {
                     token = "A8";
                 }
                 break;
             case 4:
-                if (isLabel || (c >= 0 && c <= 65535)) {
-                    token = "A16";
+                if (isLabel || (c >= 0 && c <= 255)) {
+                    token = "D8";
                 }
                 break;
             case 5:
@@ -359,7 +364,7 @@ public class GBAsm {
     
     private static void writeMachineCodeInt(String value, int size) {
         int intValue = Integer.parseInt(value);
-        debug(Integer.toHexString(intValue));
+        debug(Integer.toHexString(intValue & 0xff));
         machineCode[address++] = intValue & 0xff;
         if (size == 2) {
             machineCode[address++] = (intValue >> 8) & 0xff;
@@ -367,7 +372,7 @@ public class GBAsm {
         }
     }
     
-    private static void saveFixableAddress(String label, boolean isRelativeAddress) {
+    private static void saveFixableAddress(String label, int size, boolean isRelativeAddress) {
         if (label.startsWith(".")) {
             if (parentLabel == null) {
                 error(lineNumber, currentLine, "non-local label not declared !");
@@ -378,14 +383,17 @@ public class GBAsm {
         }
 
         if (isRelativeAddress) {
-            relativeAddressToFix.put(address, label);
+            relativeAddressToFix.put(address, 
+                lineNumber + ":" + currentLine + ":" + 1 + ":" + label);
+            
             debug("## (relative label " + label + ")");
             address++;
         }
         else {
-            physicalAddressToFix.put(address, label);
-            debug("## ## (label " + label + ")");
-            address += 2;
+            physicalAddressToFix.put(address, 
+                lineNumber + ":" + currentLine + ":" + size + ":" + label);
+            debug((size == 1 ? "##" : "## ##") + " (label " + label + ")");
+            address += size;
         }
     }
 
@@ -393,14 +401,27 @@ public class GBAsm {
     private static void fixPhysicalAddress() {
         debug("\n");
         physicalAddressToFix.keySet().forEach((rt) -> {
-            String label = physicalAddressToFix.get(rt);
+            String[] info = physicalAddressToFix.get(rt).split(":");
+            lineNumber = Integer.parseInt(info[0]);
+            currentLine = info[1];
+            int size = Integer.parseInt(info[2]);
+            String label = info[3];
             Integer dst = labels.get(label);
             if (dst == null) {
-                error(-1, "", "label '" + label + "' not declared !");
+                error(lineNumber, currentLine, 
+                    "label '" + label + "' not declared !");
             }
             debug("fixing physical address " + rt + ": " + label + "\n");
+            if (size == 1 && dst > 255) {
+                warning(lineNumber, currentLine, 
+                    "label '" + label + "', byte data exceeds bounds !\n" +
+                    label + "=$" + Integer.toHexString(dst).toUpperCase() + 
+                    " -> most significant byte (MSB) will be ignored.\n");
+            }
             machineCode[rt] = dst & 0xff;
-            machineCode[rt + 1] = (dst >> 8) & 0xff;
+            if (size > 1) {
+                machineCode[rt + 1] = (dst >> 8) & 0xff;
+            }
         });        
     }
     
@@ -408,14 +429,25 @@ public class GBAsm {
     private static void fixRelativeAddress() {
         debug("\n");
         relativeAddressToFix.keySet().forEach((rt) -> {
-            String label = relativeAddressToFix.get(rt);
+            String[] info = relativeAddressToFix.get(rt).split(":");
+            lineNumber = Integer.parseInt(info[0]);
+            currentLine = info[1];
+            int size = Integer.parseInt(info[2]);
+            String label = info[3];
             Integer dst = labels.get(label);
             if (dst == null) {
-                error(-1, "", "label '" + label + "' not declared !");
+                error(lineNumber, currentLine, 
+                    "label '" + label + "' not declared !");
             }
             int r8 = dst - (rt + 1);
-            // TODO: check -128 <= r8 <= 127
-            machineCode[rt] = r8;
+            
+            if (r8 < -128 || r8 > 127) {
+                error(lineNumber, currentLine,
+                    "relative address for label '" + 
+                    label + "' is out of range !");
+            }
+            
+            machineCode[rt] = r8 & 0xff;
             
             debug("fixing relative address " + rt + ": " +
                     label + " -> r8=" + r8 + "\n");
